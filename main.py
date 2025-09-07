@@ -1,41 +1,105 @@
-# This script reads data from a Google Sheet using the gspread library.
-# The gspread library needs to be installed first. You can do this by running:
-# pip install gspread google-auth
+# This script reads data from a Google Sheet and exports it to a formatted PDF.
 
 import gspread
 from google.oauth2.service_account import Credentials
 import json
+from reportlab.lib.pagesizes import letter
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.enums import TA_CENTER
+import os
 
 # =========================================================================
 # === IMPORTANT: SETUP INSTRUCTIONS BEFORE YOU RUN THIS SCRIPT ===
 # =========================================================================
-# 1. Go to the Google Cloud Console (https://console.cloud.google.com/)
-# 2. Create a new project or select an existing one.
-# 3. Enable the "Google Sheets API" for your project.
-# 4. Go to "APIs & Services" -> "Credentials".
-# 5. Click "Create Credentials" -> "Service Account".
-# 6. Give the service account a name and role (e.g., "Viewer" is sufficient).
-# 7. Create a new JSON key for the service account and download it.
-# 8. Rename the downloaded file to 'credentials.json' and place it in the same directory as this script.
-# 9. Get the email address of your service account (e.g., my-service-account@my-project-1234.iam.gserviceaccount.com).
-# 10. Open your Google Sheet, click "Share", and invite the service account email with "Editor" permissions.
-# 11. Replace the placeholder values for 'SPREADSHEET_ID' and 'WORKSHEET_NAME' below.
+# 1. Ensure you have followed all previous steps:
+#    - Created a virtual environment and activated it.
+#    - Installed 'gspread' and 'google-auth'.
+#    - Placed your 'credentials.json' file in this directory.
+#    - Shared your Google Sheet with the service account.
+# 2. You need to install the 'reportlab' library for PDF generation.
+#    - Run this command in your active virtual environment: pip install reportlab
+# 3. Replace the placeholder values for SPREADSHEET_ID and WORKSHEET_NAME below.
 
 # The path to your service account credentials file.
-# You must have followed the setup steps above for this to work.
-CREDENTIALS_FILE = './credentials.json'
+CREDENTIALS_FILE = 'credentials.json'
 
 # Replace with the ID of your Google Sheet.
-# You can find the spreadsheet ID in the URL:
-# https://docs.google.com/spreadsheets/d/{your_spreadsheet_id_goes_here}/edit
+# You can find the spreadsheet ID in the URL.
 SPREADSHEET_ID = '19o6daH5dkhwr1bCdKHEKcnH-EylgNJaFy-q76wyZMns'
 
 # Replace with the name of the worksheet (e.g., 'Sheet1', 'Data').
 WORKSHEET_NAME = 'Sheet1'
 
+def export_to_pdf(data, filename="google_sheet_data.pdf"):
+    """
+    Exports a list of dictionaries to a formatted PDF file.
+    """
+    try:
+        # Create a new PDF document.
+        doc = SimpleDocTemplate(filename, pagesize=letter)
+        
+        # A list to hold the elements to be added to the PDF.
+        elements = []
+        
+        # Get standard styles from ReportLab.
+        styles = getSampleStyleSheet()
+        
+        # Define a custom style for the title.
+        title_style = ParagraphStyle(
+            'TitleStyle',
+            parent=styles['Heading1'],
+            fontName='Helvetica-Bold',
+            fontSize=18,
+            leading=22,
+            alignment=TA_CENTER
+        )
+        
+        # Define a style for the data paragraphs.
+        data_style = ParagraphStyle(
+            'DataStyle',
+            parent=styles['Normal'],
+            fontName='Helvetica',
+            fontSize=10,
+            leading=12,
+        )
+
+        # Add a title to the PDF.
+        elements.append(Paragraph("Google Sheet Data Report", title_style))
+        elements.append(Spacer(1, 12))
+        
+        # Check if there is data to write.
+        if not data:
+            elements.append(Paragraph("No data found to export.", data_style))
+        else:
+            # Iterate through each record (row) in the data.
+            for i, record in enumerate(data):
+                # Start a new paragraph for each record.
+                elements.append(Paragraph(f"<b>Record {i+1}:</b>", styles['Normal']))
+                elements.append(Spacer(1, 6))
+
+                # Format the record's key-value pairs.
+                record_text = ""
+                for key, value in record.items():
+                    # Create a string for each key-value pair.
+                    record_text += f"<b>{key}:</b> {value}<br/>"
+                
+                elements.append(Paragraph(record_text, data_style))
+                elements.append(Spacer(1, 12)) # Add a space between records.
+
+        # Build the PDF file with all the elements.
+        doc.build(elements)
+        print(f"Successfully exported data to '{os.path.abspath(filename)}'")
+
+    except Exception as e:
+        print(f"An error occurred while creating the PDF: {e}")
+        print("Please ensure your data is a list of dictionaries and reportlab is installed correctly.")
+
+
 def read_google_sheet():
     """
     Authenticates with the Google Sheets API and reads all data from a worksheet.
+    Then, it calls the export_to_pdf function.
     """
     try:
         # Load credentials from the JSON file.
@@ -56,23 +120,20 @@ def read_google_sheet():
         print(f"Reading data from worksheet '{worksheet.title}'...")
 
         # Get all records from the worksheet as a list of dictionaries.
-        # This is a good way to get data if your sheet has a header row.
-        # For example, a row like ['name': 'John', 'age': 30]
         data = worksheet.get_all_records()
-
-        # You can also get all values as a list of lists.
-        # all_values = worksheet.get_all_values()
-
-        # Check if any data was found.
+        
+        # Check if any data was found and print it.
         if data:
             print("\nData found:")
-            # Iterate through the rows and print them.
-            # 'row' will be a dictionary for each record.
             for row in data:
-                # Use json.dumps to print the dictionary in a readable format.
                 print(json.dumps(row, indent=2))
+            
+            # Call the PDF export function with the data.
+            export_to_pdf(data)
         else:
             print("No data found in the worksheet.")
+            # Still call the function to create an empty PDF with a message.
+            export_to_pdf(data)
 
     except gspread.exceptions.SpreadsheetNotFound:
         print(f"Error: Spreadsheet with ID '{SPREADSHEET_ID}' not found.")
@@ -80,6 +141,9 @@ def read_google_sheet():
     except gspread.exceptions.WorksheetNotFound:
         print(f"Error: Worksheet named '{WORKSHEET_NAME}' not found.")
         print("Please double-check the worksheet name.")
+    except FileNotFoundError:
+        print("Error: The 'credentials.json' file was not found.")
+        print("Please make sure it's in the same directory as the script.")
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
         print("Please check your credentials.json file and internet connection.")
