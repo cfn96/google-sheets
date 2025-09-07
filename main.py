@@ -151,5 +151,3 @@ def read_google_sheet():
 # Call the function to run the script.
 if __name__ == "__main__":
     read_google_sheet()
-
-#
